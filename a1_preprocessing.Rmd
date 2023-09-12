@@ -73,7 +73,14 @@ If you have created a Rstudio project for this assignment, the working directory
 
 ```{r setup}
 ### Write your code here
+getwd()
 
+```
+
+```{r setup}
+# Set the working directory
+
+knitr::opts_knit$set(root.dir = '/Users/gloria/Desktop/Gloria_study/Methods_3/code/Assignment_1')
 
 ```
 
@@ -86,6 +93,14 @@ Load the following three data sets, after downloading them from dropbox and savi
 ```{r import_datasets, message = FALSE}
 ### Write your code here
 
+# Load the Demographic data
+demo_train <- read.csv("demo_train.csv")
+
+# Load the Data on utterance complexity (MLU)
+LU_train <- read.csv("LU_train.csv")
+
+# Load the Data on lexical complexity
+token_train <- read.csv("token_train.csv")
 
 ```
 
@@ -113,7 +128,18 @@ Many different procedures can be used here, and unless you have to deal with gig
 ```{r rename_variables}
 ### Write your code here
 
+# Load the dplyr package
+library(dplyr)
 
+#demo_train <- demo_train %>%
+ # {colnames(.)[colnames(.) == "Child.ID"] <- "SUBJ"; .} %>%
+  #{colnames(.)[colnames(.) == "Visit"] <- "VISIT"; .}
+
+# Rename columns
+demo_train <- demo_train %>%
+  rename(SUBJ = Child.ID, VISIT = Visit)
+
+demo_train
 ```
 
 **2. Renaming values**
@@ -124,6 +150,17 @@ Find a way to homogenize the way "visit" is reported amongst the different datas
 ```{r extract_digits}
 ### Write your code here
 
+# Load the stringr package
+library(stringr)
+
+# Extract digits from "visit" column
+LU_train$VISIT <- as.numeric(str_extract(LU_train$VISIT, "\\d"))
+token_train$VISIT <- as.numeric(str_extract(token_train$VISIT, "\\d"))
+
+
+# Now, all "visit" values are represented as digits
+LU_train
+token_train
 
 ```
 
@@ -131,12 +168,26 @@ A similar task needs to be done regarding the value names of the Child.ID variab
 
 **Tip:** You can either have one line of code for each child name that needs to be changed (easier, more typing) or specify the pattern that you want to replace (more complicated: look up "regular expressions", but more generic and thus less typing)
 
-
 ```{r remove_points}
 ### Write your code here
 
+# Custom function to remove last character, except when "." is the second character
+remove_last_character_except_abr <- function(x) {
+  ifelse(substr(x, 2, 2) == ".", x, substr(x, 1, nchar(x) - 1))
+}
 
+#apply the function to the datasets
+LU_train <- LU_train %>%
+  mutate(SUBJ = remove_last_character_except_abr(SUBJ))
+
+token_train <- token_train %>%
+  mutate(SUBJ = remove_last_character_except_abr(SUBJ))
+
+# View the modified datasets
+print(LU_train)
+print(token_train)
 ```
+
 
 
 **4. Data subsetting **
@@ -177,6 +228,40 @@ Feel free to rename the variables into something you think is more intuitive (i.
 ```{r rename_selected_variables}
 ### Write your code here
 
+# For data1
+demo_train <- demo_train %>%
+  select(
+    SUBJ, 
+    VISIT, 
+    Diagnosis, 
+    Ethnicity, 
+    Gender, 
+    Age, 
+    ADOS,  
+    MullenRaw, 
+    ExpressiveLangRaw, 
+    Socialization,
+  )
+
+# For data2
+LU_train <- LU_train %>%
+  select(
+    SUBJ, 
+    VISIT, 
+    MOT_MLU, 
+    CHI_MLU, 
+  )
+
+# For data3
+token_train <- token_train %>%
+  select(
+    SUBJ, 
+    VISIT, 
+    types_MOT, 
+    types_CHI, 
+    tokens_MOT, 
+    tokens_CHI
+  )
 
 ```
 
@@ -191,7 +276,22 @@ It is important here to check if merging the data sets:
 
 ```{r merge_data}
 ### Write your code here
+library(dplyr)
 
+# Merge the datasets using bind_rows
+merged_data <- dplyr::bind_rows(demo_train, LU_train, token_train)
+
+#rename some columns
+merged_data <- merged_data %>%
+  rename(Visit = VISIT, Child.ID = SUBJ)
+
+# Check for data loss and NAs
+data_loss <- nrow(merged_data) - sum(complete.cases(merged_data))
+nas <- sum(is.na(merged_data))
+
+# Print information
+cat("Data Loss: ", data_loss, " rows\n")
+cat("NAs in Merged Data: ", nas, "\n")
 
 ```
 
@@ -208,9 +308,33 @@ A possible way to do so:
 
 ```{r add_first_visit_variables}
 ### Write your code here
+# Create a new dataset with rows where "visit" is equal to 1
+visit1_data <- subset(merged_data, Visit == 1)
 
+#rename columns
+visit1_data <- visit1_data %>%
+  rename(ADOS1 = ADOS, MullenRaw1 = MullenRaw, ExpressiveLangRaw1 = ExpressiveLangRaw, Socialization1 = Socialization )
 
-  
+visit1_data
+
+visit1_data <- merged_data %>%
+  filter(Visit == 1) %>%
+  select(Child.ID, ADOS, MullenRaw, ExpressiveLangRaw, Socialization) %>%
+  rename(
+    ADOS1 = ADOS,
+    MullenRaw1 = MullenRaw,
+    ExpressiveLangRaw1 = ExpressiveLangRaw,
+    Socialization1 = Socialization
+  )
+
+visit1_data
+
+# Merge the datasets using bind_cols
+merged_data2 <- dplyr::bind_rows(merged_data, visit1_data)
+merged_data2
+
+# Merge the new dataset with the old dataset based on child.ID
+#merged_data2 <- left_join(merged_data, visit1_data, by = "SUBJ")
 ```
 
 **7. Reverse Encoding**
@@ -220,7 +344,23 @@ An important part of data cleaning is making sure both variable names and value 
 ```{r revert_encoding}
 ### Write your code here
 
+library(dplyr)
 
+# change 1 and 2 to F and M respectively
+#ifelse() to conditionally change the values. If "gender" is equal to 1, it will be changed to "F," and if it's equal to 2, it will be changed to "M."
+merged_data2 <- merged_data2 %>%
+  mutate(Gender = ifelse(Gender == 1, "F", "M"))
+
+#transform the 'Diagnosis' variable so that 'A's and 'B's are reverted back to ASD (Autism Spectrum Disorder) and TD (typically developing) respectively.
+cleaned_data <- merged_data2%>%
+  mutate(Diagnosis = case_when(
+    Diagnosis == 'A' ~ 'ASD',
+    Diagnosis == 'B' ~ 'TD',
+    TRUE ~ Diagnosis  # Keep other values unchanged
+  ))
+
+
+cleaned_data
 ```
 
 **8. Saving cleaned data**
@@ -229,7 +369,12 @@ Finally, save the cleaned data in Comma-Separated Values (CSV) format, under a n
 
 ```{r save_changes}
 ### Write your code here
+#maybe rename some columns to something different
+# Specify the file path and name where you want to save the CSV file
+file_path <- "/Users/gloria/Desktop/Gloria_study/Methods_3/code/Assignment_1/cleaned_data.csv"
 
+# Save the cleaned data to a CSV file
+write.csv(cleaned_data, file = file_path, row.names = FALSE)
 
 ```
 
